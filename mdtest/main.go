@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -24,6 +25,7 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/mdp/qrterminal/v3"
+	"github.com/xuri/excelize/v2"
 	"google.golang.org/protobuf/proto"
 
 	"go.mau.fi/whatsmeow"
@@ -349,6 +351,99 @@ func handleCmd(cmd string, args []string) {
 		} else {
 			log.Infof("Message sent (server timestamp: %s)", ts)
 		}
+	case "sendxlsx":
+		if len(args) < 2 {
+			log.Errorf("Usage: send <path> <msgcell>")
+			return
+		}
+		f, err := excelize.OpenFile(args[0])
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		defer func() {
+			// Close the spreadsheet.
+			if err := f.Close(); err != nil {
+				fmt.Println(err)
+			}
+		}()
+		// Get value from cell by given worksheet name and axis.
+		xlsxmsg_, err := f.GetCellValue("Sheet1", args[1])
+		xlsxmsg := ""
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		//fmt.Println(xlsxmsg_)
+		rows, err := f.GetRows("Sheet1")
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		fmt.Println("start sending messages ...")
+		msgvars := make([]string, 0)
+		for i, row := range rows {
+			if i == 0 {
+				msgvars = append(msgvars, row[1:]...)
+				fmt.Printf("%v", msgvars)
+				continue
+			}
+			xlsxmsg = xlsxmsg_
+			time.Sleep(3 * time.Second)
+			phone_number := "+98" + row[0]
+			fmt.Println(phone_number)
+			recipient, ok := parseJID(phone_number)
+			if !ok {
+				return
+			}
+			for j, vari := range msgvars {
+				xlsxmsg = strings.Replace(xlsxmsg, vari, row[j+1], 1)
+			}
+			// xlsxmsg = strings.Replace(xlsxmsg, "{{gender}}", row[1], 1)
+			// xlsxmsg = strings.Replace(xlsxmsg, "{{name}}", row[2], 1)
+			fmt.Println(xlsxmsg)
+			msg := &waProto.Message{Conversation: proto.String(xlsxmsg)}
+			ts, err := cli.SendMessage(recipient, "", msg)
+			if err != nil {
+				log.Errorf("Error sending message: %v", err)
+			} else {
+				log.Infof("Message sent (server timestamp: %s)", ts)
+			}
+		}
+	case "senddoc":
+		if len(args) < 1 {
+			log.Errorf("Usage: sendimg <jid> <doc path>")
+			return
+		}
+		recipient, ok := parseJID(args[0])
+		if !ok {
+			return
+		}
+		data, err := os.ReadFile(args[1])
+		if err != nil {
+			log.Errorf("Failed to read %s: %v", args[0], err)
+			return
+		}
+		uploaded, err := cli.Upload(context.Background(), data, whatsmeow.MediaDocument)
+		if err != nil {
+			log.Errorf("Failed to upload file: %v", err)
+			return
+		}
+		msg := &waProto.Message{DocumentMessage: &waProto.DocumentMessage{
+			Url:           proto.String(uploaded.URL),
+			Mimetype:      proto.String(http.DetectContentType(data)),
+			DirectPath:    proto.String(uploaded.DirectPath),
+			MediaKey:      uploaded.MediaKey,
+			FileEncSha256: uploaded.FileEncSHA256,
+			FileSha256:    uploaded.FileSHA256,
+			FileLength:    proto.Uint64(uint64(len(data))),
+		}}
+		ts, err := cli.SendMessage(recipient, "", msg)
+		if err != nil {
+			log.Errorf("Error sending image message: %v", err)
+		} else {
+			log.Infof("Image message sent (server timestamp: %s)", ts)
+		}
 	case "sendimg":
 		if len(args) < 2 {
 			log.Errorf("Usage: sendimg <jid> <image path> [caption]")
@@ -431,6 +526,24 @@ func handler(rawEvt interface{}) {
 		}
 
 		log.Infof("Received message %s from %s (%s): %+v", evt.Info.ID, evt.Info.SourceString(), strings.Join(metaParts, ", "), evt.Message)
+
+		r, _ := regexp.Compile("^[\\d]+")
+		user_number := evt.Info.SourceString()
+		user_number = "+" + r.FindString(user_number)
+		if user_number == "+989128516007" {
+			user_msg := evt.Message.Conversation
+			msg := &waProto.Message{Conversation: user_msg}
+			recipient, ok := parseJID(user_number)
+			if !ok {
+				return
+			}
+			ts, err := cli.SendMessage(recipient, "", msg)
+			if err != nil {
+				log.Errorf("Error sending message: %v", err)
+			} else {
+				log.Infof("Message sent (server timestamp: %s)", ts)
+			}
+		}
 
 		img := evt.Message.GetImageMessage()
 		if img != nil {
