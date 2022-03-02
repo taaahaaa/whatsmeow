@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -403,6 +404,108 @@ func handleCmd(cmd string, args []string) {
 			// xlsxmsg = strings.Replace(xlsxmsg, "{{name}}", row[2], 1)
 			fmt.Println(xlsxmsg)
 			msg := &waProto.Message{Conversation: proto.String(xlsxmsg)}
+			ts, err := cli.SendMessage(recipient, "", msg)
+			if err != nil {
+				log.Errorf("Error sending message: %v", err)
+			} else {
+				log.Infof("Message sent (server timestamp: %s)", ts)
+			}
+		}
+	case "sendxlsximg":
+		if len(args) < 3 {
+			log.Errorf("Usage: sendxlsximg <path> <img> <msgcell>")
+			return
+		}
+		f, err := excelize.OpenFile(args[0])
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		defer func() {
+			// Close the spreadsheet.
+			if err := f.Close(); err != nil {
+				fmt.Println(err)
+			}
+		}()
+		// Get value from cell by given worksheet name and axis.
+		xlsxmsg_, err := f.GetCellValue("Sheet1", args[2])
+		xlsxmsg := ""
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		//fmt.Println(xlsxmsg_)
+		rows, err := f.GetRows("Sheet1")
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		fmt.Println("start sending messages ...")
+		msgvars := make([]string, 0)
+		for i, row := range rows {
+			if i == 0 {
+				msgvars = append(msgvars, row[1:]...)
+				fmt.Printf("%v", msgvars)
+				continue
+			}
+			xlsxmsg = xlsxmsg_
+			time.Sleep(3 * time.Second)
+			phone_number := "+98" + row[0]
+			fmt.Println(phone_number)
+			recipient, ok := parseJID(phone_number)
+			if !ok {
+				return
+			}
+			for j, vari := range msgvars {
+				xlsxmsg = strings.Replace(xlsxmsg, vari, row[j+1], 1)
+			}
+			// xlsxmsg = strings.Replace(xlsxmsg, "{{gender}}", row[1], 1)
+			// xlsxmsg = strings.Replace(xlsxmsg, "{{name}}", row[2], 1)
+			fmt.Println(xlsxmsg)
+			resp, err := cli.IsOnWhatsApp([]string{phone_number})
+			if err != nil {
+				log.Errorf("Failed to check if users are on WhatsApp:", err)
+			} else {
+				for _, item := range resp {
+					if item.VerifiedName != nil {
+						//log.Infof("%s: on whatsapp: %t, JID: %s, business name: %s", item.Query, item.IsIn, item.JID, item.VerifiedName.Details.GetVerifiedName())
+						f.SetCellValue("Sheet1", "H"+strconv.Itoa(i+1), "True")
+						if err := f.SaveAs("t.xlsx"); err != nil {
+							fmt.Println(err)
+						}
+					} else {
+						//log.Infof("%s: on whatsapp: %t, JID: %s", item.Query, item.IsIn, item.JID)
+						f.SetCellValue("Sheet1", "H"+strconv.Itoa(i+1), "True")
+						if err := f.SaveAs("t.xlsx"); err != nil {
+							fmt.Println(err)
+						}
+					}
+				}
+			}
+			data, err := os.ReadFile(args[1])
+			if err != nil {
+				log.Errorf("Failed to read %s: %v", args[0], err)
+				return
+			}
+			uploaded, err := cli.Upload(context.Background(), data, whatsmeow.MediaImage)
+			if err != nil {
+				log.Errorf("Failed to upload file: %v", err)
+				return
+			}
+			msg := &waProto.Message{ImageMessage: &waProto.ImageMessage{
+				Caption:             proto.String(xlsxmsg),
+				Url:                 proto.String(uploaded.URL),
+				DirectPath:          proto.String(uploaded.DirectPath),
+				MediaKey:            uploaded.MediaKey,
+				Mimetype:            proto.String(http.DetectContentType(data)),
+				FileEncSha256:       uploaded.FileEncSHA256,
+				FileSha256:          uploaded.FileSHA256,
+				FileLength:          proto.Uint64(uint64(len(data))),
+				ThumbnailDirectPath: proto.String(uploaded.DirectPath),
+				ThumbnailSha256:     uploaded.FileSHA256,
+				ThumbnailEncSha256:  uploaded.FileEncSHA256,
+				JpegThumbnail:       uploaded.MediaKey,
+			}}
 			ts, err := cli.SendMessage(recipient, "", msg)
 			if err != nil {
 				log.Errorf("Error sending message: %v", err)
