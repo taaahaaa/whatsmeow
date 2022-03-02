@@ -469,15 +469,19 @@ func handleCmd(cmd string, args []string) {
 				for _, item := range resp {
 					if item.VerifiedName != nil {
 						//log.Infof("%s: on whatsapp: %t, JID: %s, business name: %s", item.Query, item.IsIn, item.JID, item.VerifiedName.Details.GetVerifiedName())
-						f.SetCellValue("Sheet1", "H"+strconv.Itoa(i+1), "True")
-						if err := f.SaveAs("t.xlsx"); err != nil {
-							fmt.Println(err)
+						if item.IsIn {
+							f.SetCellValue("Sheet1", "H"+strconv.Itoa(i+1), "True")
+							if err := f.SaveAs("t.xlsx"); err != nil {
+								fmt.Println(err)
+							}
 						}
 					} else {
 						//log.Infof("%s: on whatsapp: %t, JID: %s", item.Query, item.IsIn, item.JID)
-						f.SetCellValue("Sheet1", "H"+strconv.Itoa(i+1), "True")
-						if err := f.SaveAs("t.xlsx"); err != nil {
-							fmt.Println(err)
+						if item.IsIn {
+							f.SetCellValue("Sheet1", "H"+strconv.Itoa(i+1), "True")
+							if err := f.SaveAs("t.xlsx"); err != nil {
+								fmt.Println(err)
+							}
 						}
 					}
 				}
