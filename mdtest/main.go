@@ -403,6 +403,30 @@ func handleCmd(cmd string, args []string) {
 			// xlsxmsg = strings.Replace(xlsxmsg, "{{gender}}", row[1], 1)
 			// xlsxmsg = strings.Replace(xlsxmsg, "{{name}}", row[2], 1)
 			fmt.Println(xlsxmsg)
+			resp, err := cli.IsOnWhatsApp([]string{phone_number})
+			if err != nil {
+				log.Errorf("Failed to check if users are on WhatsApp:", err)
+			} else {
+				for _, item := range resp {
+					if item.VerifiedName != nil {
+						//log.Infof("%s: on whatsapp: %t, JID: %s, business name: %s", item.Query, item.IsIn, item.JID, item.VerifiedName.Details.GetVerifiedName())
+						if item.IsIn {
+							f.SetCellValue("Sheet1", "H"+strconv.Itoa(i+1), "True")
+							if err := f.SaveAs("t.xlsx"); err != nil {
+								fmt.Println(err)
+							}
+						}
+					} else {
+						//log.Infof("%s: on whatsapp: %t, JID: %s", item.Query, item.IsIn, item.JID)
+						if item.IsIn {
+							f.SetCellValue("Sheet1", "H"+strconv.Itoa(i+1), "True")
+							if err := f.SaveAs("t.xlsx"); err != nil {
+								fmt.Println(err)
+							}
+						}
+					}
+				}
+			}
 			msg := &waProto.Message{Conversation: proto.String(xlsxmsg)}
 			ts, err := cli.SendMessage(recipient, "", msg)
 			if err != nil {
